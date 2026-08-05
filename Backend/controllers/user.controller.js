@@ -6,35 +6,6 @@ import PDFDocument from "pdfkit";
 import fs from "fs";
 import ConnectionRequest from "../models/connectionSchema.js";
 
-// const convertUserDataToPdf = async (userData) => {
-//   const doc = new PDFDocument();
-//   const outputPath = crypto.randomBytes(32).toString("hex") + ".pdf";
-//   const stream = fs.createWriteStream("uploads/" + outputPath);
-
-//   doc.pipe(stream);
-
-//   doc.image(`uploads/${userData.userId.profilePicture}`, {
-//     align: "center",
-//     width: 100,
-//   });
-//   doc.fontSize(14).text(`Name: ${userData.userId.name}`);
-//   doc.fontSize(14).text(`Username: ${userData.userId.username}`);
-//   doc.fontSize(14).text(`Email: ${userData.userId.email}`);
-//   doc.fontSize(14).text(`Bio: ${userData.bio}`);
-//   doc.fontSize(14).text(`Current Possition: ${userData.currentPost}`);
-
-//   doc.fontSize(14).text(`Past Works:`);
-//   userData.pastWork.forEach((work, index) => {
-//     doc.fontSize(14).text(`Company Name: ${work.company}`);
-//     doc.fontSize(14).text(`Possition: ${work.position}`);
-//     doc.fontSize(14).text(`Years: ${work.years}`);
-//   });
-
-//   doc.end();
-
-//   return outputPath;
-// };
-
 const convertUserDataToPdf = async (userData) => {
   return new Promise((resolve, reject) => {
     try {
