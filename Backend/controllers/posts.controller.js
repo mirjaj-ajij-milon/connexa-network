@@ -100,3 +100,8 @@ export const deletePost = AsyncHandler(async (req, res) => {
   );
 
 })
+
+
+export const commentPost = AsyncHandler(async (req, res) => {
+
+})
