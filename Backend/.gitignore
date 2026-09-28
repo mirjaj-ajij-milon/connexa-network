@@ -1,6 +1,8 @@
 # Dependencies
 node_modules/
 
+api.http
+
 # Environment Variables
 .env
 .env.*
