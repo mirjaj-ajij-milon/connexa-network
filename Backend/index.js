@@ -7,7 +7,7 @@ import helmet from "helmet";
 import path from "path";
 
 import connectDB from "./config/db.js";
-import masterRouter from "./routes/index.js";
+import masterRouter from "./routes/master.routes.js";
 import { generalLimiter } from "./middlewares/rateLimiter.js";
 import { globalErrorHandler } from "./middlewares/errorMiddleware.js";
 import sanitizeInput from "./middlewares/sanitize.middleware.js";

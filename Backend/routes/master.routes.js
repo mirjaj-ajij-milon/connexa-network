@@ -36,4 +36,3 @@ masterRouter.use("/like", postRoutes);
 masterRouter.use("/delete-comment", commentRoutes);
 
 export default masterRouter;
-
