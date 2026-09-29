@@ -1,50 +1,61 @@
 import { Router } from "express";
 import {
-  acceptConnectionRequest,
-  downloadProfile,
-  getAllUserProfile,
-  getMyConnectionRequest,
   getUserAndProfile,
-  login,
-  register,
-  sendConnectionRequest,
-  updateProfileData,
   uploadProfilePicture,
-  whatAreMyConnection,
+  updateUserProfile,
+  updateProfileData,
+  getAllUserProfile,
+  downloadProfile,
 } from "../controllers/user.controller.js";
-import multer from "multer";
+import protect from "../middlewares/authmiddleware.js";
+import { uploadProfilePic } from "../config/multer.config.js";
+
 const router = Router();
 
-router.route("/register").post(register);
-router.route("/login").post(login);
+// =====================================
+// Profile Endpoints
+// =====================================
 
-const storage = multer.diskStorage({
-  destination: (req, file, cb) => {
-    cb(null, "uploads/");
-  },
+// Get logged-in user profile
+router.get("/profile", protect, getUserAndProfile);
+router.get("/get_user_and_profile", protect, getUserAndProfile);
 
-  filename: (req, file, cb) => {
-    const uniqueName = Date.now() + "-" + file.originalname;
-    cb(null, uniqueName);
-  },
-});
+// Update basic user profile (name, email, username)
+router.put("/profile", protect, updateUserProfile);
+router.put("/update", protect, updateUserProfile);
 
-const upload = multer({ storage: storage });
+// Update extended profile data (bio, experience, education)
+router.post("/profile/update", protect, updateProfileData);
+router.put("/profile/details", protect, updateProfileData);
+router.post("/update_profile_data", protect, updateProfileData);
 
-router
-  .route("/upload_profile_picture")
-  .post(upload.single("profile_picture"), uploadProfilePicture);
+// Upload profile picture
+router.post(
+  "/profile/picture",
+  protect,
+  uploadProfilePic.single("profile_picture"),
+  uploadProfilePicture
+);
+router.post(
+  "/upload_profile_picture",
+  protect,
+  uploadProfilePic.single("profile_picture"),
+  uploadProfilePicture
+);
+router.post(
+  "/user_update",
+  protect,
+  uploadProfilePic.single("profile_picture"),
+  uploadProfilePicture
+);
 
-router.route("/user_update").post(uploadProfilePicture);
+// General Profile / Public endpoints
+router.get("/all", getAllUserProfile);
+router.get("/all-profiles", getAllUserProfile);
+router.get("/get_all_user_profile", getAllUserProfile);
 
-router.route("/get_user_and_profile").get(getUserAndProfile);
-router.route("/update_profile_data").post(updateProfileData);
-router.route("/user/get_all_user_profile").get(getAllUserProfile);
-router.route("/user/download_resume").get(downloadProfile);
+router.get("/resume", protect, downloadProfile);
+router.get("/download-resume", protect, downloadProfile);
 
-router.route("/user/send_connection_request").post(sendConnectionRequest);
-router.route("/user/get_connection_request").get(getMyConnectionRequest);
-router.route("/user/user_connection_request").get(whatAreMyConnection);
-router.route("/user/accept_connection_request").post(acceptConnectionRequest);
-router.route("/")
 export default router;
+

@@ -1,383 +1,197 @@
 import User from "../models/userSchema.js";
-import bcrypt from "bcrypt";
 import Profile from "../models/profileSchema.js";
-import crypto from "crypto";
-import PDFDocument from "pdfkit";
-import fs from "fs";
-import ConnectionRequest from "../models/connectionSchema.js";
+import AsyncHandler from "../Utils/AsyncHandler.js";
+import ApiResponse from "../Utils/ResponseHandler.js";
+import ApiError from "../Utils/ErrorHandler.js";
+import convertUserDataToPdf from "../Utils/pdfGenerator.js";
 
-const convertUserDataToPdf = async (userData) => {
-  return new Promise((resolve, reject) => {
-    try {
-      const doc = new PDFDocument({ margin: 50 });
-      const outputPath = crypto.randomBytes(32).toString("hex") + ".pdf";
-      const stream = fs.createWriteStream("uploads/" + outputPath);
-      doc.pipe(stream);
+// @desc    Get user profile by token or current authenticated user
+// @route   GET /api/v1/users/profile
+// @access  Private / Optional Public with token
+export const getUserAndProfile = AsyncHandler(async (req, res) => {
+  const userId = req.user ? req.user._id : null;
 
-      if (
-        userData?.userId?.profilePicture &&
-        fs.existsSync(`uploads/${userData.userId.profilePicture}`)
-      ) {
-        doc.image(`uploads/${userData.userId.profilePicture}`, {
-          width: 100,
-          align: "center",
-        });
-      }
-
-      doc.moveDown();
-      doc.fontSize(16).text(`Name: ${userData?.userId?.name || "N/A"}`);
-      doc.fontSize(14).text(`Username: ${userData?.userId?.username || "N/A"}`);
-      doc.fontSize(14).text(`Email: ${userData?.userId?.email || "N/A"}`);
-      doc.moveDown();
-
-      doc.fontSize(14).text(`Bio: ${userData?.bio || "N/A"}`);
-      doc
-        .fontSize(14)
-        .text(`Current Position: ${userData?.currentPost || "N/A"}`);
-      doc.moveDown();
-
-      if (userData?.pastWork?.length > 0) {
-        doc.fontSize(14).text("Past Works:");
-        userData.pastWork.forEach((work) => {
-          doc.text(`• Company: ${work.company}`);
-          doc.text(`  Position: ${work.position}`);
-          doc.text(`  Years: ${work.years} experiance`);
-          doc.moveDown(0.5);
-        });
-      }
-
-      doc.end();
-
-      stream.on("finish", () => resolve(outputPath));
-      stream.on("error", (err) => reject(err));
-    } catch (err) {
-      reject(err);
-    }
-  });
-};
-
-export const register = async (req, res) => {
-  try {
-    const { name, email, password, username } = req.body;
-
-    if (!name || !email || !password || !username) {
-      return res.status(400).json({ message: "all feilds are required!" });
-    }
-
-    const existUser = await User.findOne({
-      email,
-    });
-
-    if (existUser) {
-      return res.status(400).json({ message: "User already exists!" });
-    }
-
-    const hashedPass = await bcrypt.hash(password, 10);
-
-    const newUser = new User({
-      name,
-      email,
-      password: hashedPass,
-      username,
-    });
-
-    await newUser.save();
-    const profile = new Profile({ userId: newUser._id });
-
-    await profile.save();
-
-    return res.status(200).json({ message: "User registered successfull!" });
-  } catch (error) {
-    return res.status(500).json({ message: error.message });
+  if (!userId) {
+    throw new ApiError(400, "User ID or valid auth token required!");
   }
-};
 
-export const login = async (req, res) => {
-  try {
-    const { email, password } = req.body;
+  const userProfile = await Profile.findOne({ userId }).populate(
+    "userId",
+    "name email username profilePicture"
+  );
 
-    if (!email) {
-      return res.status(400).json({ message: "Please provide a valid email!" });
-    }
-    if (!password) {
-      return res
-        .status(400)
-        .json({ message: "Please provide a valid password!" });
-    }
-
-    const existingUser = await User.findOne({ email });
-    if (!existingUser) {
-      return res
-        .status(404)
-        .json({ message: "User not found for given email!" });
-    }
-
-    const match = await bcrypt.compare(password, existingUser.password);
-    if (!match) {
-      return res.status(400).json({ message: "Invalid email and password!" });
-    }
-
-    const token = crypto.randomBytes(34).toString("hex");
-
-    await User.updateOne({ _id: existingUser._id }, { token });
-
-    return res.status(200).json({
-      message: "Login successful!",
-      user: {
-        _id: existingUser._id,
-        email: existingUser.email,
-        name: existingUser.name,
-      },
-      token,
-    });
-  } catch (error) {
-    console.error(`Error while Login: ${error.message}`);
-    return res.status(500).json({ message: "Internal Server Error" });
+  if (!userProfile) {
+    // Create profile if missing
+    const newProfile = await Profile.create({ userId });
+    await newProfile.populate("userId", "name email username profilePicture");
+    return res.status(200).json(
+      new ApiResponse({
+        success: true,
+        message: "User profile fetched successfully",
+        data: newProfile,
+      })
+    );
   }
-};
 
-export const uploadProfilePicture = async (req, res) => {
-  const { token } = req.body;
+  return res.status(200).json(
+    new ApiResponse({
+      success: true,
+      message: "User profile fetched successfully",
+      data: userProfile,
+    })
+  );
+});
 
-  try {
-    const user = await User.findOne({ token: token });
-    if (!user) {
-      res.status(404).json({ message: "User not found" });
-    }
+// @desc    Upload profile picture
+// @route   POST /api/v1/users/profile/picture
+// @access  Private
+export const uploadProfilePicture = AsyncHandler(async (req, res) => {
+  if (!req.file) {
+    throw new ApiError(400, "No profile picture file uploaded!");
+  }
 
-    if (!req.file) {
-      return res.status(400).json({ message: "No file uploaded!" });
-    }
+  const user = await User.findById(req.user._id);
+  if (!user) {
+    throw new ApiError(404, "User not found");
+  }
 
-    user.profilePicture = req.file.filename;
+  user.profilePicture = req.file.filename;
+  await user.save();
 
-    await user.save();
-    return res.status(200).json({
+  return res.status(200).json(
+    new ApiResponse({
+      success: true,
       message: "Profile picture uploaded successfully!",
-      file: req.file,
-      profilePictureUrl: `/uploads/${req.file.filename}`, // optional
-    });
-  } catch (error) {
-    console.error("Upload Error:", error.message);
-    res
-      .status(500)
-      .json({ message: "File upload failed", error: error.message });
+      data: {
+        file: req.file,
+        profilePictureUrl: `/uploads/${req.file.filename}`,
+        filename: req.file.filename,
+      },
+    })
+  );
+});
+
+// @desc    Update basic user details (name, email, username)
+// @route   PUT /api/v1/users/update
+// @access  Private
+export const updateUserProfile = AsyncHandler(async (req, res) => {
+  const user = await User.findById(req.user._id);
+  if (!user) {
+    throw new ApiError(404, "User not found!");
   }
-};
 
-export const updateUserProfille = async (req, res) => {
-  const { token, ...newUserData } = req.body;
-  try {
-    const user = User.findOne({ token: token });
-    if (!user) {
-      return res.status(404).json({ message: "User not found!" });
+  const { name, email, username } = req.body;
+
+  if (email && email.toLowerCase() !== user.email) {
+    const existingEmail = await User.findOne({ email: email.toLowerCase() });
+    if (existingEmail) {
+      throw new ApiError(400, "Email address is already in use!");
     }
-
-    const { email, username } = newUserData;
-    const existingUser = User.findOne({ $or: [{ email }, { username }] });
-
-    if (existingUser) {
-      if (existingUser || String(existingUser._id) !== String(user._id)) {
-        return res.status(404).json({ message: "user already exist!" });
-      }
-    }
-
-    Object.assign(user, newUserData);
-
-    await user.save();
-
-    return res.status(200).json({ message: "User Updated!" });
-  } catch (error) {
-    console.error("Profile update Error:", error.message);
-    res
-      .status(500)
-      .json({ message: "Profile update failed", error: error.message });
+    user.email = email.toLowerCase();
   }
-};
 
-export const getUserAndProfile = async (req, res) => {
-  try {
-    const { token } = req.body;
-
-    const user = await User.findOne({ token: token });
-
-    if (!user) {
-      return res.status(404).json({ message: "User not found!" });
+  if (username && username.toLowerCase() !== user.username) {
+    const existingUsername = await User.findOne({ username: username.toLowerCase() });
+    if (existingUsername) {
+      throw new ApiError(400, "Username is already taken!");
     }
-
-    const userProfile = await Profile.findOne({ userId: user._id }).populate(
-      "userId",
-      "name email username profilePicture"
-    );
-
-    // await userProfile.save();
-    return res.status(200).json(userProfile);
-  } catch (error) {
-    console.error("Error in getUserAndProfile:", error);
-    res.status(500).json({ message: "Server error", error: error.message });
+    user.username = username.toLowerCase();
   }
-};
 
-export const updateProfileData = async (req, res) => {
-  try {
-    const { token, ...newProfileData } = req.body; //newProfileData is take all JSON Data
+  if (name) user.name = name;
 
-    const userProfile = await User.findOne({ token: token });
+  await user.save();
 
-    if (!userProfile) {
-      return res.status(404).json({ message: "User not found" });
-    }
+  return res.status(200).json(
+    new ApiResponse({
+      success: true,
+      message: "User basic details updated successfully!",
+      data: {
+        _id: user._id,
+        name: user.name,
+        email: user.email,
+        username: user.username,
+        profilePicture: user.profilePicture,
+      },
+    })
+  );
+});
 
-    const profile_to_update = await Profile.findOne({
-      userId: userProfile._id,
-    });
+// @desc    Update extended profile data (bio, currentPost, pastWork, education)
+// @route   POST /api/v1/users/profile/update
+// @access  Private
+export const updateProfileData = AsyncHandler(async (req, res) => {
+  const { bio, currentPost, pastWork, education } = req.body;
 
-    Object.assign(profile_to_update, newProfileData);
+  let profile = await Profile.findOne({ userId: req.user._id });
 
-    await profile_to_update.save();
-
-    return res.status(200).json({
-      message: "Profile Updated!",
-      profile_to_update: profile_to_update,
-    });
-  } catch (error) {
-    return res.status(500).json({ message: error.message });
+  if (!profile) {
+    profile = new Profile({ userId: req.user._id });
   }
-};
 
-export const getAllUserProfile = async (req, res) => {
-  try {
-    const profiles = await Profile.find().populate(
-      "userId",
-      "name username profilePicture"
-    );
-    return res.json({ profiles });
-  } catch (error) {
-    console.log(`Error to get all userprofiledata ${error.message}`);
-    return res.status(500).json({ message: error.message });
+  if (bio !== undefined) profile.bio = bio;
+  if (currentPost !== undefined) profile.currentPost = currentPost;
+  if (pastWork !== undefined) profile.pastWork = pastWork;
+  if (education !== undefined) profile.education = education;
+
+  await profile.save();
+
+  return res.status(200).json(
+    new ApiResponse({
+      success: true,
+      message: "Profile details updated successfully!",
+      data: profile,
+    })
+  );
+});
+
+// @desc    Get all user profiles
+// @route   GET /api/v1/users/all-profiles
+// @access  Public
+export const getAllUserProfile = AsyncHandler(async (req, res) => {
+  const profiles = await Profile.find().populate(
+    "userId",
+    "name username email profilePicture"
+  );
+
+  return res.status(200).json(
+    new ApiResponse({
+      success: true,
+      message: "All user profiles fetched successfully",
+      data: profiles,
+    })
+  );
+});
+
+// @desc    Download profile resume PDF
+// @route   GET /api/v1/users/download-resume
+// @access  Public / Private
+export const downloadProfile = AsyncHandler(async (req, res) => {
+  const user_id = req.query.id || (req.user ? req.user._id : null);
+
+  if (!user_id) {
+    throw new ApiError(400, "User ID parameter ('id') or authentication token is required!");
   }
-};
 
-export const downloadProfile = async (req, res) => {
-  try {
-    const user_id = req.query.id;
+  const userProfile = await Profile.findOne({ userId: user_id }).populate(
+    "userId",
+    "name username email profilePicture"
+  );
 
-    const userProfile = await Profile.findOne({ userId: user_id }).populate(
-      "userId",
-      "name username email profilePicture"
-    );
-
-    let outputPath = await convertUserDataToPdf(userProfile);
-
-    return res
-      .status(200)
-      .json({ message: "user data to pdf successfull", Result: outputPath });
-  } catch (error) {
-    console.log(`Error downloading resume: ${error.message}`);
-    return res.status(500).json({ message: error.message });
+  if (!userProfile) {
+    throw new ApiError(404, "Profile not found for given User ID!");
   }
-};
 
-export const sendConnectionRequest = async (req, res) => {
-  const { token, connectionId } = req.body;
-  try {
-    const user = await User.findOne({ token: token });
+  const pdfFilename = await convertUserDataToPdf(userProfile);
 
-    if (!user) {
-      res.status(404).json({ message: "User not found!" });
-    }
-
-    const connectionUser = await User.findOne({ _id: connectionId });
-
-    if (!connectionUser) {
-      req.status(404).json({ message: "connection user not found!" });
-    }
-
-    const existingRequest = await ConnectionRequest.findOne({
-      userId: user._id,
-      connectionId: connectionUser._id,
-    });
-
-    if (existingRequest) {
-      res.status(400).json({ message: "Request already exist!" });
-    }
-
-    const newConnectionRequest = new ConnectionRequest({
-      userId: user._id,
-      connectionId: connectionUser._id,
-    });
-
-    await newConnectionRequest.save();
-
-    res.status(200).json({ message: "Request send...." });
-  } catch (error) {
-    console.log(`Error sending to connection request...! ${error.message}`);
-    res.status(500).json({ message: error.message });
-  }
-};
-
-export const getMyConnectionRequest = async (req, res) => {
-  const { token } = req.body;
-  try {
-    const user = await User.findOne({ token: token });
-
-    if (!user) {
-      res.status(404).json({ message: "User not found..!" });
-    }
-
-    const connections = await ConnectionRequest.findOne({
-      userId: user._id,
-    }).populate("connectionId", "name username email profilePicture");
-
-    res.json({ connections });
-  } catch (error) {
-    console.log(`error to get my connection request : ${error.message}`);
-    res.status(500).json({ message: error.message });
-  }
-};
-
-export const whatAreMyConnection = async (req, res) => {
-  const { token } = req.body;
-  try {
-    const user = await User.findOne({ token: token });
-    if (!user) {
-      res.status(404).json({ message: "User not found..!" });
-    }
-
-    const connections = ConnectionRequest.find({
-      connectionId: user._id,
-    }).populate("userId", "name username email profilePicture");
-    return res.json(connections);
-  } catch (error) {
-    console.log(`error to get what Are My Connection : ${error.message}`);
-    res.status(500).json({ message: error.message });
-  }
-};
-
-export const acceptConnectionRequest = async (req, res) => {
-  const { token, requestId, action_type } = req.body;
-  try {
-    const user = await User.findOne({ token: token });
-    if (!user) {
-      res.status(404).json({ message: "User not found..!" });
-    }
-
-    const connection = await ConnectionRequest.findOne({ _id: requestId });
-
-    if (!connection) {
-      res.status(404).json({ message: "Connection Not found..!" });
-    }
-
-    if (action_type === "accept") {
-      connection.status_accepted = true;
-    } else {
-      connection.status_accepted = false;
-    }
-
-    await connection.save();
-    return res.status(200).json({ message: "Request Updated..!" });
-  } catch (error) {
-    console.log(`error to accepting Connection request : ${error.message}`);
-    res.status(500).json({ message: error.message });
-  }
-};
+  return res.status(200).json(
+    new ApiResponse({
+      success: true,
+      message: "Resume PDF generated successfully",
+      data: {
+        pdfUrl: `/uploads/${pdfFilename}`,
+        filename: pdfFilename,
+      },
+    })
+  );
+});
