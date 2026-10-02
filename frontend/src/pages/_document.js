@@ -6,7 +6,7 @@ export default function Document() {
       <Head>
         <meta charSet="utf-8" />
       </Head>
-      <body className="bg-slate-950 text-slate-100 antialiased selection:bg-indigo-500 selection:text-white">
+      <body>
         <Main />
         <NextScript />
       </body>
